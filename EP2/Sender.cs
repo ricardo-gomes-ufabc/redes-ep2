@@ -3,25 +3,26 @@ using System.Net.Sockets;
 
 namespace EP2;
 
-internal class Receiver
+internal class Sender
 {
     private static Canal? _canal;
+    private static Random? _aleatorio;
 
     private static void Main()
     {
         try
         {
-            Console.Write("Digite a porta do Cliente: ");
+            Console.Write("Digite a porta do Sender: ");
 
             int portaCliente = Convert.ToInt32(Console.ReadLine());
 
             IPEndPoint pontoConexaoLocal = new IPEndPoint(IPAddress.Any, portaCliente);
 
-            Console.Write("Digite o IP do Servidor: ");
+            Console.Write("Digite o IP do Receiver: ");
 
             string? ipServidor = Console.ReadLine();
 
-            Console.Write("Digite a porta do Servidor: ");
+            Console.Write("Digite a porta do Receiver: ");
 
             int portaServidor = Convert.ToInt32(Console.ReadLine());
 
@@ -32,8 +33,7 @@ internal class Receiver
                                  new IPEndPoint(IPAddress.Parse(ipServidor), portaServidor);
 
             _canal = new Canal(pontoConexaoRemoto: pontoConexaoRemoto,
-                               pontoConexaoLocal: pontoConexaoLocal,
-                               modoServidor: false);
+                               pontoConexaoLocal: pontoConexaoLocal);
 
             Console.Write("Deseja enviar de forma paralela [S/N]?: ");
 

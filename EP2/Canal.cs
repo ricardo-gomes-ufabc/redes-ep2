@@ -1,5 +1,7 @@
-﻿using System.Net;
+﻿using Newtonsoft.Json;
+using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 
 namespace EP2;
@@ -27,12 +29,6 @@ internal class Canal
 
     #endregion
 
-    #region Config Extra
-
-    private bool _modoServidor;
-
-    #endregion
-
     #region Consolidação
 
     private uint _totalMensagensEnviadas;
@@ -45,24 +41,20 @@ internal class Canal
 
     #endregion
 
-    public Canal(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto, bool modoServidor) : this(pontoConexaoLocal, modoServidor)
+    #region Criação Canal
+
+    public Canal(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto) : this(pontoConexaoLocal)
     {
         _pontoConexaoRemoto = pontoConexaoRemoto;
     }
 
-    public Canal(IPEndPoint pontoConexaoLocal, bool modoServidor)
+    public Canal(IPEndPoint pontoConexaoLocal)
     {
         CarregarConfigs();
 
         _pontoConexaoLocal = pontoConexaoLocal;
-        _modoServidor = modoServidor;
 
         _socket.Client.Bind(_pontoConexaoLocal);
-
-        if (!_modoServidor)
-        {
-            _socket.Client.ReceiveTimeout = 3000;
-        }
     }
 
     private void CarregarConfigs()
@@ -87,38 +79,54 @@ internal class Canal
         }
     }
 
-    #region Criação UDP
-
-    public byte[] GerarMensagemUdp()
-    {
-        byte[] segmento = new byte[_aleatorio.Next(minValue: 1, maxValue: 1024)];
-
-        _aleatorio.NextBytes(segmento);
-
-        return segmento;
-    }
-
     #endregion
 
     #region Envio e Recebimento
 
-    public void EnviarMensagem(byte[] mensagem)
+    private byte[] SegmentoConfiavelParaByteArray(SegmentoConfiavel segmentoConfiavel)
     {
-        _socket.Send(mensagem, _pontoConexaoRemoto);
+        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(segmentoConfiavel));
+    }
+
+    private SegmentoConfiavel? ByteArrayParaSegmentoConfiavel(byte[] byteArray)
+    {
+        return JsonSerializer.Deserialize<SegmentoConfiavel>(Encoding.UTF8.GetString(byteArray));
+    }
+
+    public void EnviarSegmento(SegmentoConfiavel segmentoConfiavel)
+    {
+        byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
+
+        if (!ProcessarMensagem(bytesSegmentoConfiavel))
+        {
+            return;
+        }
+
+        _socket.Send(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
 
         lock (_locker)
         {
             _totalMensagensEnviadas++;
         }
-        
-        Console.WriteLine("Mensagem UDP enviada");
     }
 
-    public byte[]? ReceberMensagem()
+    public SegmentoConfiavel? ReceberSegmento()
     {
         try
         {
-            return _socket.Receive(ref _pontoConexaoRemoto);
+            byte[] segmentoRecebido = _socket.Receive(ref _pontoConexaoRemoto);
+
+            SegmentoConfiavel? segmentoConfiavelRecebido = ByteArrayParaSegmentoConfiavel(segmentoRecebido);
+
+            lock (_locker)
+            {
+                if (segmentoConfiavelRecebido != null)
+                {
+                    _totalMensagensRecebidas++;
+                }
+            }
+
+            return segmentoConfiavelRecebido;
         }
         catch
         {
@@ -126,36 +134,15 @@ internal class Canal
         }
     }
 
-    public bool ProcessarMensagem(byte[]? mensagemRecebida)
+    public bool ProcessarMensagem(byte[] mensagemRecebida)
     {
         lock (_locker)
         {
-            if (mensagemRecebida == null)
-            {
-                return false;
-            }
-
-            _totalMensagensRecebidas++;
-
             byte[] mensagemModificada = mensagemRecebida.ToArray();
 
             bool mensagemEliminada = AplicarPropriedades(ref mensagemModificada);
 
-            ValidarSegmento(original: mensagemRecebida, modificado: mensagemModificada);
-
             return !mensagemEliminada;
-        }
-    }
-
-    private void ValidarSegmento(byte[] original, byte[] modificado)
-    {
-        if (original.Length != modificado.Length)
-        {
-            _totalMensagensCortadas++;
-        }
-        else if(!original.SequenceEqual(modificado))
-        {
-            _totalMensagensCorrompidas++;
         }
     }
 
@@ -185,11 +172,6 @@ internal class Canal
             _totalMensagensDuplicadas++;
             _totalMensagensRecebidas++;
             Console.WriteLine("Mensagem duplicada.");
-
-            if (_modoServidor)
-            {
-                EnviarMensagem(GerarMensagemUdp());
-            }
         }
 
         if (DeveriaAplicarPropriedade(_probabilidadeCorrupcao))
