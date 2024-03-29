@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34330.188
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EP2", "EP2.csproj", "{81420B57-44EB-42B6-AA20-43A58917BC52}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Receiver_Debug|Any CPU = Receiver_Debug|Any CPU
+		Receiver_Debug|x64 = Receiver_Debug|x64
+		Receiver_Release|Any CPU = Receiver_Release|Any CPU
+		Receiver_Release|x64 = Receiver_Release|x64
+		Sender_Debug|Any CPU = Sender_Debug|Any CPU
+		Sender_Debug|x64 = Sender_Debug|x64
+		Sender_Release|Any CPU = Sender_Release|Any CPU
+		Sender_Release|x64 = Sender_Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Debug|Any CPU.ActiveCfg = Receiver_Debug|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Debug|Any CPU.Build.0 = Receiver_Debug|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Debug|x64.ActiveCfg = Receiver_Debug|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Debug|x64.Build.0 = Receiver_Debug|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Release|Any CPU.ActiveCfg = Receiver_Release|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Release|Any CPU.Build.0 = Receiver_Release|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Release|x64.ActiveCfg = Receiver_Release|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Receiver_Release|x64.Build.0 = Receiver_Release|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Debug|Any CPU.ActiveCfg = Sender_Debug|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Debug|Any CPU.Build.0 = Sender_Debug|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Debug|x64.ActiveCfg = Sender_Debug|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Debug|x64.Build.0 = Sender_Debug|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Release|Any CPU.ActiveCfg = Sender_Release|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Release|Any CPU.Build.0 = Sender_Release|Any CPU
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Release|x64.ActiveCfg = Sender_Release|x64
+		{81420B57-44EB-42B6-AA20-43A58917BC52}.Sender_Release|x64.Build.0 = Sender_Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DA8BCA79-3BC5-42BF-AFDE-1F1F32C62BFD}
+	EndGlobalSection
+EndGlobal
