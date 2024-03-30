@@ -11,4 +11,4 @@
 //    public byte[] Data;
 //}
 
-public record SegmentoConfiavel(bool Syn, bool Ack, bool Fin, uint SeqNum, uint AckNum, uint WindowSize, uint Id, byte[] Data, byte[] CheckSum);
+public record SegmentoConfiavel(bool Syn, bool Ack, bool Fin, uint SeqNum, byte[] Data, byte[] CheckSum);

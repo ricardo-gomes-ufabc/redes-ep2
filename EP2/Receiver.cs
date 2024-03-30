@@ -1,9 +1,12 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Timers;
+using Timer = System.Threading.Timer;
 
 namespace EP2;
 
-public enum EstadoConexão
+public enum EstadoConexaoReceiver
 {
     Escuta,
     SynRecebido,
@@ -14,9 +17,16 @@ public enum EstadoConexão
 
 internal class Receiver
 {
-    private static Canal? _canal;
+    private static Canal _canal;
     private static bool _conexaoAtiva;
-    private static EstadoConexão _estadoConexão;
+
+    private static EstadoConexaoReceiver _estadoConexão = EstadoConexaoReceiver.Fechada;
+
+    private static uint _numeroAck = 0;
+
+    private static Timer _temporizadorRecebimento;
+
+    private static int _timeout = 30000;
 
     private static void Main()
     {
@@ -31,7 +41,6 @@ internal class Receiver
             _canal = new Canal(pontoConexaoLocal: pontoConexao);
 
             _conexaoAtiva = true;
-            _estadoConexão = EstadoConexão.Escuta;
 
             ReceberMensagens();
 
@@ -48,73 +57,67 @@ internal class Receiver
 
     private static void ReceberMensagens()
     {
+        _estadoConexão = EstadoConexaoReceiver.Escuta;
+
         while (_conexaoAtiva)
         {
-            SegmentoConfiavel segmentoConfiavel = _canal.ReceberSegmento();
+            SegmentoConfiavel? segmentoConfiavel = _canal.ReceberSegmento();
 
-            if (segmentoConfiavel == null)
-            {
-                continue;
-            }
-
-            switch (_estadoConexão)
-            {
-                case EstadoConexão.Escuta:
-                    if (segmentoConfiavel is {Syn: true, Ack: false, Fin: false })
-                    {
-
-                    }
-                    break;
-                case EstadoConexão.SynRecebido:
-                    break;
-                case EstadoConexão.Estabelecida:
-                    break;
-                case EstadoConexão.Fechando:
-                    break;
-                case EstadoConexão.Fechada:
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
+            TratarMensagem(segmentoConfiavel);
         }
+    }
 
-        byte[]? bufferReceptor;
-
-        double timeoutSegundos = 15;
-
-        using (Timer? timer = new Timer(_ => tokenCancelamento.Cancel(), null, TimeSpan.FromSeconds(timeoutSegundos), TimeSpan.FromMilliseconds(-1)))
+    private static void TratarMensagem(SegmentoConfiavel? segmentoConfiavel)
+    {
+        if (segmentoConfiavel == null)
         {
-            try
-            {
-                while (!tokenCancelamento.IsCancellationRequested)
-                {
-                    if (_canal != null && _canal._socket.Available == 0 )
-                    {
-                        Thread.Sleep(100);
-                        continue;
-                    }
-
-                    timer.Change(TimeSpan.FromSeconds(timeoutSegundos), Timeout.InfiniteTimeSpan);
-
-                    bufferReceptor = _canal?.ReceberMensagem();
-
-                    if (_canal != null && _canal.ProcessarMensagem(bufferReceptor) )
-                    {
-                        Console.WriteLine($"Mensagem UDP recebida.");
-
-                        _canal?.EnviarMensagem(_canal.GerarMensagemUdp());
-
-                        Console.WriteLine("Mensagem UDP respondida");
-                    }
-                }
-            }
-            catch (SocketException e)
-            {
-                if (e.SocketErrorCode != SocketError.TimedOut)
-                {
-                    throw;
-                }
-            }
+            return;
         }
+
+        switch (_estadoConexão)
+        {
+            case EstadoConexaoReceiver.Escuta:
+                if (segmentoConfiavel is { Syn: true, Ack: false, Fin: false} && segmentoConfiavel.SeqNum == _numeroAck)
+                {
+                    _estadoConexão = EstadoConexaoReceiver.SynRecebido;
+
+                    _numeroAck = segmentoConfiavel.SeqNum + 1;
+
+                    SegmentoConfiavel synAck = new SegmentoConfiavel(Syn: true,
+                                                                     Ack: true,
+                                                                     Fin: false,
+                                                                     SeqNum: _numeroAck,
+                                                                     Data: new byte[] { },
+                                                                     CheckSum: new byte[] { });
+
+                    _canal.EnviarSegmento(synAck);
+
+                    _temporizadorRecebimento = new Timer(TemporizadorEncerrado, null, _timeout, Timeout.Infinite);
+                }
+                break;
+            case EstadoConexaoReceiver.SynRecebido:
+                if (segmentoConfiavel is { Syn: false, Ack: true, Fin: false })
+                {
+
+                }
+                break;
+            case EstadoConexaoReceiver.Estabelecida:
+                if (segmentoConfiavel is { Syn: true, Ack: false, Fin: false })
+                {
+
+                }
+                break;
+            case EstadoConexaoReceiver.Fechando:
+                break;
+            case EstadoConexaoReceiver.Fechada:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+    }
+
+    private static void TemporizadorEncerrado(object? state)
+    {
+        throw new NotImplementedException();
     }
 }

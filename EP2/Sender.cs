@@ -3,10 +3,21 @@ using System.Net.Sockets;
 
 namespace EP2;
 
+public enum EstadoConexaoSender
+{
+    SynEnviado,
+    Estabelecida,
+    Fin1,
+    Fin2,
+    Fechada
+}
+
 internal class Sender
 {
-    private static Canal? _canal;
+    private static Canal _canal;
     private static Random? _aleatorio;
+    private static EstadoConexaoSender _estadoConexão = EstadoConexaoSender.Fechada;
+    private static uint _sequenceNumber = 0;
 
     private static void Main()
     {
@@ -18,11 +29,11 @@ internal class Sender
 
             IPEndPoint pontoConexaoLocal = new IPEndPoint(IPAddress.Any, portaCliente);
 
-            Console.Write("Digite o IP do Receiver: ");
+            Console.Write("Digite o IP do Sender: ");
 
             string? ipServidor = Console.ReadLine();
 
-            Console.Write("Digite a porta do Receiver: ");
+            Console.Write("Digite a porta do Sender: ");
 
             int portaServidor = Convert.ToInt32(Console.ReadLine());
 
@@ -35,18 +46,17 @@ internal class Sender
             _canal = new Canal(pontoConexaoRemoto: pontoConexaoRemoto,
                                pontoConexaoLocal: pontoConexaoLocal);
 
-            Console.Write("Deseja enviar de forma paralela [S/N]?: ");
+            Console.Write("Digite a mensagem a ser enviada: ");
 
-            string? paralelismo = Console.ReadLine();
-            bool modoParalelo = !string.IsNullOrEmpty(paralelismo) && paralelismo.ToLower() == "s";
+            string? mensagem = Console.ReadLine();
 
             Console.Write("Digite a quantidade de mensagens a serem enviadas: ");
 
             int quantidadeMensagens = Convert.ToInt32(Console.ReadLine());
 
-            EnviarMensagens(quantidadeMensagens, modoParalelo);
+            EnviarMensagens(quantidadeMensagens, mensagem);
 
-            Console.WriteLine("Cliente encerrado.");
+            Console.WriteLine("Sender encerrado.");
 
             _canal.Fechar();
         }
@@ -57,8 +67,13 @@ internal class Sender
         }
     }
 
-    private static void EnviarMensagens(int quantidade, bool modoParalelo)
+    private static void EnviarMensagens(int quantidade, string? mensagem)
     {
+        SegmentoConfiavel syn = new SegmentoConfiavel(true,
+                                                      false,
+                                                      false,
+                                                      0)
+
         if (modoParalelo)
         {
             List<Thread> threads = new List<Thread>();
