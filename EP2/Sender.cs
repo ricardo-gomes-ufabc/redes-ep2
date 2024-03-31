@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Text;
+using System.Threading;
 using System.Timers;
 using Timer = System.Timers.Timer;
 
@@ -35,10 +36,9 @@ internal class Sender
     private static uint _base = 1;
     private static uint _proximoSeqNum = 1;
 
-    private static List<Thread> _threadsEnvio = new List<Thread>();
+    private static bool _recebendoAcks = false;
 
     private static object _trava = new object();
-    
 
     private static void Main()
     {
@@ -50,11 +50,11 @@ internal class Sender
 
             IPEndPoint pontoConexaoLocal = new IPEndPoint(IPAddress.Any, portaCliente);
 
-            Console.Write("Digite o IP do Sender: ");
+            Console.Write("Digite o IP do Receiver: ");
 
             string? ipServidor = Console.ReadLine();
 
-            Console.Write("Digite a porta do Sender: ");
+            Console.Write("Digite a porta do Receiver: ");
 
             int portaServidor = Convert.ToInt32(Console.ReadLine());
 
@@ -121,23 +121,28 @@ internal class Sender
                         {
                             if (_proximoSeqNum < _base + _tamanhoJanela)
                             {
-                                for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela; _proximoSeqNum++)
+                                for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens; _proximoSeqNum++)
                                 {
-                                    Thread envioPacote = new Thread(() =>
+                                    uint id = _proximoSeqNum;
+
+                                    Task.Run(() =>
                                     {
-                                        _canal.EnviarSegmento(_bufferMensagens[_proximoSeqNum]);
-                                        ReceberResposta();
+                                        SegmentoConfiavel enviarSegmentoConfiavel = _bufferMensagens[id];
+
+                                        enviarSegmentoConfiavel.SetNumAck(_numeroAck);
+
+                                        _canal.EnviarSegmento(enviarSegmentoConfiavel);
                                     });
-
-                                    envioPacote.Start();
-
-                                    _threadsEnvio.Add(envioPacote);
 
                                     if (_proximoSeqNum == _base)
                                     {
                                         IniciarTemporizador();
                                     }
                                 }
+
+                                _recebendoAcks = true;
+
+                                ReceberRespostas();
                             }
                         }
                     }
@@ -211,13 +216,15 @@ internal class Sender
                 default: throw new ArgumentOutOfRangeException();
             }
         }
+
+        Thread.Sleep(millisecondsTimeout: 15000);
     }
 
     private static void CriarBufferMensagens(uint quantidade, string? mensagem)
     {
         _totalMensagens = quantidade;
 
-        for (uint i = 0; i < quantidade; i++)
+        for (uint i = 1; i <= quantidade; i++)
         {
             SegmentoConfiavel segmentoMensagem = new SegmentoConfiavel(syn: false,
                                                                        ack: false,
@@ -254,12 +261,36 @@ internal class Sender
             switch (_estadoConexao)
             {
                 case EstadoConexaoSender.SynEnviado:
-                    {
-                        _estadoConexao = EstadoConexaoSender.Fechada;
-                        break;
-                    }
-                case EstadoConexaoSender.Estabelecida:
+                {
+                    _estadoConexao = EstadoConexaoSender.Fechada;
+
                     break;
+                }
+                case EstadoConexaoSender.Estabelecida:
+                {
+                    _recebendoAcks = false;
+
+                    for (uint i = _base; i < _proximoSeqNum; i++)
+                    {
+                        uint id = i;
+
+                        Task.Run(() =>
+                        {
+                            _canal.EnviarSegmento(_bufferMensagens[id]);
+                        });
+
+                        if (i == _base)
+                        {
+                            IniciarTemporizador();
+                        }
+                    }
+
+                    _recebendoAcks = true;
+
+                    ReceberRespostas();
+
+                    break;
+                }
                 case EstadoConexaoSender.Fin1:
                     break;
                 case EstadoConexaoSender.Fin2:
@@ -286,9 +317,28 @@ internal class Sender
         _canal.EnviarSegmento(ack);
     }
 
-    private static void ReceberResposta()
+    private static void ReceberRespostas()
     {
-        SegmentoConfiavel? fin = _canal.ReceberSegmento();
+        while (_recebendoAcks)
+        {
+            SegmentoConfiavel? ack = _canal.ReceberSegmento();
+
+            lock (_trava)
+            {
+                if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumAck == _numeroSeq + 1)
+                {
+                    _base = ack.NumAck + 1;
+                    _numeroSeq = ack.NumAck + 1;
+
+                    if (_base == _proximoSeqNum)
+                    {
+                        PararTemporizador();
+
+                        _recebendoAcks = false;
+                    }
+                }
+            }
+        }
     }
 }
 

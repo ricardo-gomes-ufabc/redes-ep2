@@ -105,7 +105,7 @@ internal class Receiver
                 }
                 case EstadoConexaoReceiver.SynRecebido:
                 {
-                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.n)
+                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
                         PararTemporizador();
 
@@ -205,7 +205,40 @@ internal class Receiver
         {
             PararTemporizador();
 
-            _estadoConexao = EstadoConexaoReceiver.Escuta;
+            switch (_estadoConexao)
+            {
+                case EstadoConexaoReceiver.Escuta:
+                    break;
+                case EstadoConexaoReceiver.SynRecebido:
+                {
+                    _estadoConexao = EstadoConexaoReceiver.Escuta;
+
+                    break;
+                }
+                case EstadoConexaoReceiver.Estabelecida:
+                    break;
+                case EstadoConexaoReceiver.Fechando:
+                {
+                    SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
+                                                                  ack: false,
+                                                                  push: false,
+                                                                  fin: true,
+                                                                  numSeq: _numeroSeq,
+                                                                  numAck: _numeroAck,
+                                                                  data: Array.Empty<byte>(),
+                                                                  checkSum: Array.Empty<byte>());
+
+                    _canal.EnviarSegmento(fin);
+
+                    IniciarTemporizador();
+
+                    break;
+                }
+                case EstadoConexaoReceiver.Fechada:
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
         }
     }
 }
