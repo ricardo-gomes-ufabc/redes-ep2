@@ -1,5 +1,8 @@
 ﻿using System.Net;
-using System.Net.Sockets;
+using System.Text;
+using System.Timers;
+using Timer = System.Timers.Timer;
+
 
 namespace EP2;
 
@@ -15,9 +18,27 @@ public enum EstadoConexaoSender
 internal class Sender
 {
     private static Canal _canal;
-    private static Random? _aleatorio;
-    private static EstadoConexaoSender _estadoConexão = EstadoConexaoSender.Fechada;
-    private static uint _sequenceNumber = 0;
+    private static bool _conexaoAtiva;
+
+    private static EstadoConexaoSender _estadoConexao = EstadoConexaoSender.Fechada;
+
+    private static uint _numeroSeq = 0;
+    private static uint _numeroAck = 0;
+
+    private static int _timeoutMilissegundos = 30000;
+    private static Timer _temporizadorRecebimento;
+
+    private static Dictionary<uint, SegmentoConfiavel> _bufferMensagens = new Dictionary<uint, SegmentoConfiavel>();
+
+    private static uint _totalMensagens;
+    private static uint _tamanhoJanela = 20;
+    private static uint _base = 1;
+    private static uint _proximoSeqNum = 1;
+
+    private static List<Thread> _threadsEnvio = new List<Thread>();
+
+    private static object _trava = new object();
+    
 
     private static void Main()
     {
@@ -39,8 +60,8 @@ internal class Sender
 
             IPEndPoint pontoConexaoRemoto;
 
-            pontoConexaoRemoto = string.IsNullOrEmpty(ipServidor) ? 
-                                 new IPEndPoint(IPAddress.Loopback, portaServidor) : 
+            pontoConexaoRemoto = string.IsNullOrEmpty(ipServidor) ?
+                                 new IPEndPoint(IPAddress.Loopback, portaServidor) :
                                  new IPEndPoint(IPAddress.Parse(ipServidor), portaServidor);
 
             _canal = new Canal(pontoConexaoRemoto: pontoConexaoRemoto,
@@ -52,9 +73,11 @@ internal class Sender
 
             Console.Write("Digite a quantidade de mensagens a serem enviadas: ");
 
-            int quantidadeMensagens = Convert.ToInt32(Console.ReadLine());
+            uint quantidadeMensagens = Convert.ToUInt32(Console.ReadLine());
 
-            EnviarMensagens(quantidadeMensagens, mensagem);
+            CriarBufferMensagens(quantidadeMensagens, mensagem);
+
+            EnviarMensagens();
 
             Console.WriteLine("Sender encerrado.");
 
@@ -67,60 +90,205 @@ internal class Sender
         }
     }
 
-    private static void EnviarMensagens(int quantidade, string? mensagem)
+    private static void EnviarMensagens()
     {
-        SegmentoConfiavel syn = new SegmentoConfiavel(true,
-                                                      false,
-                                                      false,
-                                                      0)
+        _conexaoAtiva = true;
 
-        if (modoParalelo)
+        while (_conexaoAtiva)
         {
-            List<Thread> threads = new List<Thread>();
-
-            for (int i = 0; i < quantidade; i++)
+            switch (_estadoConexao)
             {
-                Thread thread = new Thread(EnvioMensagem);
+                case EstadoConexaoSender.SynEnviado:
+                {
+                    SegmentoConfiavel? synAck = _canal.ReceberSegmento();
 
-                threads.Add(thread);
+                    if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumAck == _numeroSeq + 1)
+                    {
+                        PararTemporizador();
 
-                thread.Start();
-            }
+                        ResponderMensagem(synAck);
 
-            foreach (Thread thread in threads)
-            {
-                thread.Join();
-            }
-        }
-        else
-        {
-            for (int i = 0; i < quantidade; i++)
-            {
-                EnvioMensagem();
+                        _estadoConexao = EstadoConexaoSender.Estabelecida;
+                    }
+
+                    break;
+                }
+                case EstadoConexaoSender.Estabelecida:
+                {
+                    lock (_trava)
+                    {
+                        while (_base != _totalMensagens)
+                        {
+                            if (_proximoSeqNum < _base + _tamanhoJanela)
+                            {
+                                for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela; _proximoSeqNum++)
+                                {
+                                    Thread envioPacote = new Thread(() =>
+                                    {
+                                        _canal.EnviarSegmento(_bufferMensagens[_proximoSeqNum]);
+                                        ReceberResposta();
+                                    });
+
+                                    envioPacote.Start();
+
+                                    _threadsEnvio.Add(envioPacote);
+
+                                    if (_proximoSeqNum == _base)
+                                    {
+                                        IniciarTemporizador();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    break;
+                }
+                case EstadoConexaoSender.Fin1:
+                {
+                    SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
+                                                                  ack: false,
+                                                                  push: false,
+                                                                  fin: true,
+                                                                  numSeq: _numeroSeq,
+                                                                  numAck: _numeroAck,
+                                                                  data: Array.Empty<byte>(),
+                                                                  checkSum: Array.Empty<byte>());
+
+                    _canal.EnviarSegmento(fin);
+
+                    IniciarTemporizador();
+
+                    SegmentoConfiavel? finAck = _canal.ReceberSegmento();
+
+                    if (finAck is { Syn: false, Ack: true, Push: false, Fin: false } && finAck.NumAck == _numeroSeq + 1)
+                    {
+                        PararTemporizador();
+
+                        _estadoConexao = EstadoConexaoSender.Fin2;
+                    }
+
+                    break;
+                }
+                case EstadoConexaoSender.Fin2:
+                {
+                    IniciarTemporizador();
+
+                    SegmentoConfiavel? fin = _canal.ReceberSegmento();
+
+                    if (fin is { Syn: false, Ack: false, Push: false, Fin: true } && fin.NumAck == _numeroSeq + 1)
+                    {
+                        PararTemporizador();
+
+                        ResponderMensagem(fin);
+
+                        _estadoConexao = EstadoConexaoSender.Fechada;
+
+                        _conexaoAtiva = false;
+                    }
+
+                    break;
+                }
+                case EstadoConexaoSender.Fechada:
+                {
+                    SegmentoConfiavel syn = new SegmentoConfiavel(syn: true,
+                                                                  ack: false,
+                                                                  push: false,
+                                                                  fin: false,
+                                                                  numSeq: _numeroSeq,
+                                                                  numAck: _numeroAck,
+                                                                  data: Array.Empty<byte>(),
+                                                                  checkSum: Array.Empty<byte>());
+
+                    _canal.EnviarSegmento(syn);
+
+                    _estadoConexao = EstadoConexaoSender.SynEnviado;
+
+                    IniciarTemporizador();
+
+                    break;
+                }
+                default: throw new ArgumentOutOfRangeException();
             }
         }
     }
 
-    private static void EnvioMensagem()
+    private static void CriarBufferMensagens(uint quantidade, string? mensagem)
     {
-        _canal?.EnviarMensagem(_canal.GerarMensagemUdp());
+        _totalMensagens = quantidade;
 
-        try
+        for (uint i = 0; i < quantidade; i++)
         {
-            if (_canal != null && _canal.ProcessarMensagem(_canal.ReceberMensagem()))
+            SegmentoConfiavel segmentoMensagem = new SegmentoConfiavel(syn: false,
+                                                                       ack: false,
+                                                                       push: true,
+                                                                       fin: false,
+                                                                       numSeq: i,
+                                                                       numAck: _numeroAck,
+                                                                       data: Encoding.UTF8.GetBytes(mensagem),
+                                                                       checkSum: Array.Empty<byte>());
+
+            _bufferMensagens.Add(i, segmentoMensagem);
+        }
+    }
+
+    private static void IniciarTemporizador()
+    {
+        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
+        _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
+        _temporizadorRecebimento.AutoReset = false;
+    }
+
+    private static void PararTemporizador()
+    {
+        _temporizadorRecebimento.Stop();
+        _temporizadorRecebimento.Dispose();
+    }
+
+    private static void TemporizadorEncerrado(object? state, ElapsedEventArgs elapsedEventArgs)
+    {
+        lock (_trava)
+        {
+            PararTemporizador();
+
+            switch (_estadoConexao)
             {
-                Console.WriteLine($"Mensagem de resposta recebida.");
+                case EstadoConexaoSender.SynEnviado:
+                    {
+                        _estadoConexao = EstadoConexaoSender.Fechada;
+                        break;
+                    }
+                case EstadoConexaoSender.Estabelecida:
+                    break;
+                case EstadoConexaoSender.Fin1:
+                    break;
+                case EstadoConexaoSender.Fin2:
+                    break;
+                case EstadoConexaoSender.Fechada: break;
+                default: throw new ArgumentOutOfRangeException();
             }
         }
-        catch (SocketException e)
-        {
-            if (e.SocketErrorCode != SocketError.TimedOut)
-            {
-                throw;
-            }
+    }
 
-            Console.WriteLine($"Mensagem de resposta nunca chegou.");
-        }
+    private static void ResponderMensagem(SegmentoConfiavel segmentoConfiavel)
+    {
+        _numeroAck = segmentoConfiavel.NumSeq + 1;
+
+        SegmentoConfiavel ack = new SegmentoConfiavel(syn: false,
+                                                      ack: true,
+                                                      push: false,
+                                                      fin: false,
+                                                      numSeq: _numeroSeq,
+                                                      numAck: _numeroAck,
+                                                      data: Array.Empty<byte>(),
+                                                      checkSum: Array.Empty<byte>());
+
+        _canal.EnviarSegmento(ack);
+    }
+
+    private static void ReceberResposta()
+    {
+        SegmentoConfiavel? fin = _canal.ReceberSegmento();
     }
 }
 

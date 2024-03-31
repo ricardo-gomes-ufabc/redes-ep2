@@ -1,5 +1,4 @@
-﻿using System;
-using System.Net;
+﻿using System.Net;
 using System.Timers;
 using Timer = System.Timers.Timer;
 
@@ -63,9 +62,7 @@ internal class Receiver
 
         while (_conexaoAtiva)
         {
-            SegmentoConfiavel? segmentoConfiavel = _canal.ReceberSegmento();
-
-            TratarMensagem(segmentoConfiavel);
+            TratarMensagem(_canal.ReceberSegmento());
         }
 
         Thread.Sleep(millisecondsTimeout: 15000);
@@ -90,30 +87,27 @@ internal class Receiver
 
                         _numeroAck = segmentoConfiavel.NumSeq + 1;
 
-                        SegmentoConfiavel synAck = new SegmentoConfiavel(Syn: true,
-                                                                         Ack: true,
-                                                                         Push: false,
-                                                                         Fin: false,
-                                                                         NumSeq: _numeroSeq,
-                                                                         NumAck: _numeroAck,
-                                                                         Data: new byte[] { },
-                                                                         CheckSum: new byte[] { });
+                        SegmentoConfiavel synAck = new SegmentoConfiavel(syn: true,
+                                                                         ack: true,
+                                                                         push: false,
+                                                                         fin: false,
+                                                                         numSeq: _numeroSeq,
+                                                                         numAck: _numeroAck,
+                                                                         data: Array.Empty<byte>(),
+                                                                         checkSum: Array.Empty<byte>());
 
                         _canal.EnviarSegmento(synAck);
 
-                        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
-                        _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
-                        _temporizadorRecebimento.AutoReset = false;
+                        IniciarTemporizador();
                     }
 
                     break;
                 }
                 case EstadoConexaoReceiver.SynRecebido:
                 {
-                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false })
+                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.n)
                     {
-                        _temporizadorRecebimento.Stop();
-                        _temporizadorRecebimento.Dispose();
+                        PararTemporizador();
 
                         _estadoConexao = EstadoConexaoReceiver.Estabelecida;
 
@@ -138,20 +132,18 @@ internal class Receiver
 
                             ResponderMensagem(segmentoConfiavel);
 
-                            SegmentoConfiavel fin = new SegmentoConfiavel(Syn: false,
-                                                                          Ack: false,
-                                                                          Push: false,
-                                                                          Fin: true,
-                                                                          NumSeq: _numeroSeq,
-                                                                          NumAck: _numeroAck,
-                                                                          Data: new byte[] { },
-                                                                          CheckSum: new byte[] { });
+                            SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
+                                                                          ack: false,
+                                                                          push: false,
+                                                                          fin: true,
+                                                                          numSeq: _numeroSeq,
+                                                                          numAck: _numeroAck,
+                                                                          data: Array.Empty<byte>(),
+                                                                          checkSum: Array.Empty<byte>());
 
                             _canal.EnviarSegmento(fin);
 
-                            _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
-                            _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
-                            _temporizadorRecebimento.AutoReset = false;
+                            IniciarTemporizador();
 
                             break;
                         }
@@ -163,8 +155,7 @@ internal class Receiver
                 {
                     if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false })
                     {
-                        _temporizadorRecebimento.Stop();
-                        _temporizadorRecebimento.Dispose();
+                        PararTemporizador();
 
                         _estadoConexao = EstadoConexaoReceiver.Fechada;
 
@@ -173,10 +164,8 @@ internal class Receiver
 
                     break;
                 }
-                default:
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
+                case EstadoConexaoReceiver.Fechada: break;
+                default: throw new ArgumentOutOfRangeException();
             }
         }
     }
@@ -185,24 +174,36 @@ internal class Receiver
     {
         _numeroAck = segmentoConfiavel.NumSeq + 1;
 
-        SegmentoConfiavel ack = new SegmentoConfiavel(Syn: false,
-                                                      Ack: true,
-                                                      Push: false,
-                                                      Fin: false,
-                                                      NumSeq: _numeroSeq,
-                                                      NumAck: _numeroAck,
-                                                      Data: new byte[] { },
-                                                      CheckSum: new byte[] { });
+        SegmentoConfiavel ack = new SegmentoConfiavel(syn: false,
+                                                      ack: true,
+                                                      push: false,
+                                                      fin: false,
+                                                      numSeq: _numeroSeq,
+                                                      numAck: _numeroAck,
+                                                      data: Array.Empty<byte>(),
+                                                      checkSum: Array.Empty<byte>());
 
         _canal.EnviarSegmento(ack);
+    }
+
+    private static void IniciarTemporizador()
+    {
+        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
+        _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
+        _temporizadorRecebimento.AutoReset = false;
+    }
+
+    private static void PararTemporizador()
+    {
+        _temporizadorRecebimento.Stop();
+        _temporizadorRecebimento.Dispose();
     }
 
     private static void TemporizadorEncerrado(object? state, ElapsedEventArgs elapsedEventArgs)
     {
         lock (_trava)
         {
-            _temporizadorRecebimento.Stop();
-            _temporizadorRecebimento.Dispose();
+            PararTemporizador();
 
             _estadoConexao = EstadoConexaoReceiver.Escuta;
         }
