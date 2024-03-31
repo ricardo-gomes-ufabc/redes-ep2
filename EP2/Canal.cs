@@ -1,8 +1,8 @@
-﻿using Newtonsoft.Json;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+
 
 namespace EP2;
 
@@ -97,10 +97,10 @@ internal class Canal
     {
         byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
 
-        if (!ProcessarMensagem(bytesSegmentoConfiavel))
-        {
-            return;
-        }
+        //if (!ProcessarMensagem(bytesSegmentoConfiavel))
+        //{
+        //    return;
+        //}
 
         _socket.Send(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
 
