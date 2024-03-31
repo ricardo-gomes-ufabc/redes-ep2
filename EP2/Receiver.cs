@@ -105,13 +105,13 @@ internal class Receiver
                 }
                 case EstadoConexaoReceiver.SynRecebido:
                 {
-                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumAck == _numeroSeq + 1)
+                    if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumSeq == _numeroAck && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
                         PararTemporizador();
 
                         _estadoConexao = EstadoConexaoReceiver.Estabelecida;
 
-                        _numeroSeq = segmentoConfiavel.NumAck + 1;
+                        _numeroSeq = segmentoConfiavel.NumAck;
                     }
 
                     break;
@@ -120,7 +120,7 @@ internal class Receiver
                 {
                     switch (segmentoConfiavel)
                     {
-                        case { Syn: false, Ack: false, Push: true, Fin: false } when segmentoConfiavel.NumSeq == _numeroAck:
+                        case { Syn: false, Ack: false, Push: true, Fin: false } when segmentoConfiavel.NumSeq == _numeroAck + 1:
                         {
                             ResponderMensagem(segmentoConfiavel);
 

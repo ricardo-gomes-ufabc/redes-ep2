@@ -98,12 +98,33 @@ internal class Sender
         {
             switch (_estadoConexao)
             {
+                case EstadoConexaoSender.Fechada:
+                {
+                    SegmentoConfiavel syn = new SegmentoConfiavel(syn: true,
+                                                                  ack: false,
+                                                                  push: false,
+                                                                  fin: false,
+                                                                  numSeq: _numeroSeq,
+                                                                  numAck: _numeroAck,
+                                                                  data: Array.Empty<byte>(),
+                                                                  checkSum: Array.Empty<byte>());
+
+                    _canal.EnviarSegmento(syn);
+
+                    _estadoConexao = EstadoConexaoSender.SynEnviado;
+
+                    IniciarTemporizador();
+
+                    break;
+                }
                 case EstadoConexaoSender.SynEnviado:
                 {
                     SegmentoConfiavel? synAck = _canal.ReceberSegmento();
 
-                    if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumAck == _numeroSeq + 1)
+                    if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumSeq == _numeroAck && synAck.NumAck == _numeroSeq + 1)
                     {
+                        _numeroSeq = synAck.NumAck;
+
                         PararTemporizador();
 
                         ResponderMensagem(synAck);
@@ -123,15 +144,13 @@ internal class Sender
                             {
                                 for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens; _proximoSeqNum++)
                                 {
-                                    uint id = _proximoSeqNum;
+                                    SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[_proximoSeqNum];
+
+                                    proximoSegmentoConfiavel.SetNumAck(_numeroAck);
 
                                     Task.Run(() =>
                                     {
-                                        SegmentoConfiavel enviarSegmentoConfiavel = _bufferMensagens[id];
-
-                                        enviarSegmentoConfiavel.SetNumAck(_numeroAck);
-
-                                        _canal.EnviarSegmento(enviarSegmentoConfiavel);
+                                        _canal.EnviarSegmento(proximoSegmentoConfiavel);
                                     });
 
                                     if (_proximoSeqNum == _base)
@@ -194,25 +213,6 @@ internal class Sender
 
                     break;
                 }
-                case EstadoConexaoSender.Fechada:
-                {
-                    SegmentoConfiavel syn = new SegmentoConfiavel(syn: true,
-                                                                  ack: false,
-                                                                  push: false,
-                                                                  fin: false,
-                                                                  numSeq: _numeroSeq,
-                                                                  numAck: _numeroAck,
-                                                                  data: Array.Empty<byte>(),
-                                                                  checkSum: Array.Empty<byte>());
-
-                    _canal.EnviarSegmento(syn);
-
-                    _estadoConexao = EstadoConexaoSender.SynEnviado;
-
-                    IniciarTemporizador();
-
-                    break;
-                }
                 default: throw new ArgumentOutOfRangeException();
             }
         }
@@ -272,11 +272,11 @@ internal class Sender
 
                     for (uint i = _base; i < _proximoSeqNum; i++)
                     {
-                        uint id = i;
+                        SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
 
-                        Task.Run(() =>
+                            Task.Run(() =>
                         {
-                            _canal.EnviarSegmento(_bufferMensagens[id]);
+                            _canal.EnviarSegmento(proximoSegmentoConfiavel);
                         });
 
                         if (i == _base)
@@ -325,10 +325,10 @@ internal class Sender
 
             lock (_trava)
             {
-                if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumAck == _numeroSeq + 1)
+                if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumSeq == _numeroAck && ack.NumAck == _numeroSeq + 1)
                 {
-                    _base = ack.NumAck + 1;
-                    _numeroSeq = ack.NumAck + 1;
+                    _base = ack.NumAck;
+                    _numeroSeq = ack.NumAck;
 
                     if (_base == _proximoSeqNum)
                     {
