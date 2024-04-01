@@ -114,8 +114,6 @@ internal class Sender
 
                     _threads.EnviarSegmento(syn);
 
-                    Console.WriteLine($"Mensagem SYN id {syn.NumSeq} envidada"); //Remover
-
                     _estadoConexao = EstadoConexaoSender.SynEnviado;
 
                     _threads.IniciarTemporizador();
@@ -131,8 +129,6 @@ internal class Sender
                         _threads.PararTemporizador();
 
                         _numeroSeq = synAck.NumAck;
-
-                        Console.WriteLine($"Mensagem SYNACK id {synAck.NumAck} recebida"); //Remover
 
                         ResponderMensagem(synAck);
 
@@ -186,8 +182,6 @@ internal class Sender
 
                                 _threads.EnviarSegmento(proximoSegmentoConfiavel);
 
-                                Console.WriteLine($"Mensagem id {proximoSegmentoConfiavel.NumSeq} enviada"); //Remover
-
                                 if (_proximoSeqNum == _base)
                                 {
                                     _threads.IniciarTemporizador();
@@ -213,9 +207,7 @@ internal class Sender
 
                         _threads.EnviarSegmento(fin);
 
-                        Console.WriteLine($"Mensagem FIN id {fin.NumSeq} enviada"); //Remover
-
-                            _threads.IniciarTemporizador();
+                        _threads.IniciarTemporizador();
 
                         _estadoConexao = EstadoConexaoSender.Fin1;
                     }
@@ -233,9 +225,7 @@ internal class Sender
                         _estadoConexao = EstadoConexaoSender.Fin2;
 
                         _numeroSeq = ack.NumAck;
-
-                        Console.WriteLine($"Mensagem ACK id {ack.NumAck} recebida"); //Remover
-                        }
+                    }
 
                     break;
                 }
@@ -249,9 +239,7 @@ internal class Sender
                     {
                         _threads.PararTemporizador();
 
-                        Console.WriteLine($"Mensagem FIN id {fin.NumAck} recebida"); //Remover
-
-                            ResponderMensagem(fin);
+                        ResponderMensagem(fin);
 
                         _estadoConexao = EstadoConexaoSender.Fechada;
 
@@ -346,8 +334,6 @@ internal class Sender
                                                       checkSum: Array.Empty<byte>());
 
         _threads.EnviarSegmento(ack);
-
-        Console.WriteLine($"Mensagem ACK id {ack.NumSeq} enviada"); //Remover
     }
 
     private static void ReceberRespostas()
@@ -360,7 +346,7 @@ internal class Sender
             {
                 if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumSeq == _numeroAck && ack.NumAck == _numeroSeq + 1)
                 {
-                    Console.WriteLine($"Mensagem ACK id {ack.NumAck} recebida");
+                    Console.WriteLine($"Mensagem id {ack.NumAck} recebida");
 
                     _base = ack.NumAck;
                     _numeroSeq = ack.NumAck;
