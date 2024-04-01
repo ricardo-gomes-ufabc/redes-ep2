@@ -68,6 +68,8 @@ internal class Sender
             _threads = new Threads(pontoConexaoRemoto: pontoConexaoRemoto,
                                    pontoConexaoLocal: pontoConexaoLocal);
 
+            _threads.ConfigurarTemporizador(TemporizadorEncerrado);
+
             Console.Write("Digite a mensagem a ser enviada: ");
 
             string? mensagem = Console.ReadLine();
@@ -114,7 +116,7 @@ internal class Sender
 
                     _estadoConexao = EstadoConexaoSender.SynEnviado;
 
-                    _threads.IniciarTemporizador(_evento);
+                    //_threads.IniciarTemporizador();
 
                     break;
                 }
@@ -124,7 +126,7 @@ internal class Sender
 
                     if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumSeq == _numeroAck && synAck.NumAck == _numeroSeq + 1)
                     {
-                        _threads.PararTemporizador();
+                        //_threads.PararTemporizador();
 
                         _numeroSeq = synAck.NumAck;
 
@@ -141,18 +143,20 @@ internal class Sender
                 }
                 case EstadoConexaoSender.Estabelecida:
                 {
-                    lock (_trava)
+                    while (_reeviandoJanela)
                     {
-                        while (_reeviandoJanela)
-                        {
-                            Thread.Sleep(500);
-                        }
+                        Thread.Sleep(500);
+                    }
 
-                        while (_base <= _totalMensagens)
+                    while (_base <= _totalMensagens)
+                    {
+                        lock (_trava)
                         {
                             if (_proximoSeqNum >= _base + _tamanhoJanela) continue;
 
-                            for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens; _proximoSeqNum++)
+                            for (_proximoSeqNum = _base;
+                                 _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens;
+                                 _proximoSeqNum++)
                             {
                                 SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[_proximoSeqNum];
 
@@ -162,19 +166,19 @@ internal class Sender
 
                                 if (_proximoSeqNum == _base)
                                 {
-                                    _threads.IniciarTemporizador(_evento);
+                                    _threads.IniciarTemporizador();
                                 }
                             }
 
                             _recebendoAcks = true;
-
-                            ReceberRespostas();
                         }
 
-                        if (_base > _totalMensagens)
-                        {
-                            _estadoConexao = EstadoConexaoSender.Fin1;
-                        }
+                        ReceberRespostas();
+                    }
+
+                    if (_base > _totalMensagens)
+                    {
+                        _estadoConexao = EstadoConexaoSender.Fin1;
                     }
                     
                     break;
@@ -192,7 +196,7 @@ internal class Sender
 
                     _threads.EnviarSegmento(fin);
 
-                    _threads.IniciarTemporizador(_evento);
+                    _threads.IniciarTemporizador();
 
                     SegmentoConfiavel? finAck = _threads.ReceberSegmento();
 
@@ -209,7 +213,7 @@ internal class Sender
                 }
                 case EstadoConexaoSender.Fin2:
                 {
-                    _threads.IniciarTemporizador(_evento);
+                    _threads.IniciarTemporizador();
 
                     SegmentoConfiavel? fin = _threads.ReceberSegmento();
 
@@ -254,13 +258,13 @@ internal class Sender
 
     private static void TemporizadorEncerrado(object? state, ElapsedEventArgs elapsedEventArgs)
     {
-        lock (_trava)
-        {
-            _threads.PararTemporizador();
+        _threads.PararTemporizador();
 
-            switch (_estadoConexao)
+        switch (_estadoConexao)
+        {
+            case EstadoConexaoSender.SynEnviado:
             {
-                case EstadoConexaoSender.SynEnviado:
+                lock (_trava)
                 {
                     _estadoConexao = EstadoConexaoSender.Fechada;
 
@@ -268,14 +272,17 @@ internal class Sender
 
                     break;
                 }
-                case EstadoConexaoSender.Estabelecida:
+            }
+            case EstadoConexaoSender.Estabelecida:
+            {
+                lock (_trava)
                 {
                     _recebendoAcks = false;
                     _reeviandoJanela = true;
 
                     _threads.CancelarRecebimento();
 
-                    string identificadores = String.Join(',', Enumerable.Range((int) _base, (int) _proximoSeqNum));
+                    string identificadores = String.Join(',', Enumerable.Range((int)_base, (int)_proximoSeqNum - 1));
 
                     Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}");
 
@@ -287,25 +294,25 @@ internal class Sender
 
                         if (i == _base)
                         {
-                            _threads.IniciarTemporizador(_evento);
+                            _threads.IniciarTemporizador();
                         }
                     }
 
                     _recebendoAcks = true;
-
-                    ReceberRespostas();
-
-                    break;
                 }
-                case EstadoConexaoSender.Fin1: break;
-                case EstadoConexaoSender.Fin2: break;
-                case EstadoConexaoSender.Fechada: break;
-                default: throw new ArgumentOutOfRangeException();
+
+                ReceberRespostas();
+
+                break;
             }
+            case EstadoConexaoSender.Fin1: break;
+            case EstadoConexaoSender.Fin2: break;
+            case EstadoConexaoSender.Fechada: break;
+            default: throw new ArgumentOutOfRangeException();
         }
     }
 
-    private static void ResponderMensagem(SegmentoConfiavel segmentoConfiavel)
+    private static void ResponderMensagem(SegmentoConfiavel? segmentoConfiavel)
     {
         _numeroAck = segmentoConfiavel.NumSeq + 1;
 

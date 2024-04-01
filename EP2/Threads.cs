@@ -12,7 +12,7 @@ public class Threads
     private CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
 
     private static int _timeoutMilissegundos = 15000;
-    private static Timer _temporizadorRecebimento;
+    private static Timer _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
 
     public Threads(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto)
     {
@@ -29,12 +29,7 @@ public class Threads
         _canal.EnviarSegmento(segmento);
     }
 
-    public void EnviarSegmentoAsync(SegmentoConfiavel segmento)
-    {
-        Task.Run(() => _canal.EnviarSegmento(segmento));
-    }
-
-    public SegmentoConfiavel ReceberSegmento()
+    public SegmentoConfiavel? ReceberSegmento()
     {
         SegmentoConfiavel? segmentoRecebido;
 
@@ -53,23 +48,27 @@ public class Threads
         _tockenCancelamentoRecebimento.Cancel();
     }
 
-    public void IniciarTemporizador(ElapsedEventHandler evento)
+    public void ConfigurarTemporizador(ElapsedEventHandler evento)
     {
-        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
         _temporizadorRecebimento.Elapsed += evento;
-        _temporizadorRecebimento.AutoReset = false;
-        _temporizadorRecebimento.Start();
+        _temporizadorRecebimento.AutoReset = true;
+    }
+
+    public void IniciarTemporizador()
+    {
+        _temporizadorRecebimento.Enabled = true;
     }
 
     public void PararTemporizador()
     {
         _temporizadorRecebimento.Stop();
-        _temporizadorRecebimento.Dispose();
     }
 
     public void Fechar()
     {
         _tockenCancelamentoRecebimento.Dispose();
+
+        _temporizadorRecebimento.Dispose();
 
         _canal.Fechar();
     }
