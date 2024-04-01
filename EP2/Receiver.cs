@@ -24,7 +24,7 @@ internal class Receiver
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
 
-    private static int _timeoutMilissegundos = 30000;
+    private static int _timeoutMilissegundos = 60000;
     private static Timer _temporizadorRecebimento;
 
     private static object _trava = new object();
@@ -120,13 +120,13 @@ internal class Receiver
                 {
                     switch (segmentoConfiavel)
                     {
-                        case { Syn: false, Ack: false, Push: true, Fin: false } when segmentoConfiavel.NumSeq == _numeroAck + 1:
+                        case { Syn: false, Ack: false, Push: true, Fin: false } when segmentoConfiavel.NumSeq == _numeroAck:
                         {
                             ResponderMensagem(segmentoConfiavel);
 
                             break;
                         }
-                        case { Syn: false, Ack: false, Push: false, Fin: true }:
+                        case { Syn: false, Ack: false, Push: false, Fin: true } when segmentoConfiavel.NumSeq == _numeroAck:
                         {
                             _estadoConexao = EstadoConexaoReceiver.Fechando;
 

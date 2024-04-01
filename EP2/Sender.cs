@@ -26,7 +26,7 @@ internal class Sender
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
 
-    private static int _timeoutMilissegundos = 30000;
+    private static int _timeoutMilissegundos = 60000;
     private static Timer _temporizadorRecebimento;
 
     private static Dictionary<uint, SegmentoConfiavel> _bufferMensagens = new Dictionary<uint, SegmentoConfiavel>();
@@ -138,32 +138,33 @@ internal class Sender
                 {
                     lock (_trava)
                     {
-                        while (_base != _totalMensagens)
+                        while (_base < _totalMensagens)
                         {
-                            if (_proximoSeqNum < _base + _tamanhoJanela)
+                            if (_proximoSeqNum >= _base + _tamanhoJanela) continue;
+
+                            for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens; _proximoSeqNum++)
                             {
-                                for (_proximoSeqNum = _base; _proximoSeqNum < _base + _tamanhoJanela && _proximoSeqNum <= _totalMensagens; _proximoSeqNum++)
+                                SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[_proximoSeqNum];
+
+                                proximoSegmentoConfiavel.SetNumAck(_numeroAck);
+
+                                Task.Run(() =>
                                 {
-                                    SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[_proximoSeqNum];
+                                    _canal.EnviarSegmento(proximoSegmentoConfiavel);
+                                });
 
-                                    proximoSegmentoConfiavel.SetNumAck(_numeroAck);
-
-                                    Task.Run(() =>
-                                    {
-                                        _canal.EnviarSegmento(proximoSegmentoConfiavel);
-                                    });
-
-                                    if (_proximoSeqNum == _base)
-                                    {
-                                        IniciarTemporizador();
-                                    }
+                                if (_proximoSeqNum == _base)
+                                {
+                                    IniciarTemporizador();
                                 }
-
-                                _recebendoAcks = true;
-
-                                ReceberRespostas();
                             }
+
+                            _recebendoAcks = true;
+
+                            ReceberRespostas();
                         }
+
+                        _estadoConexao = EstadoConexaoSender.Fin1;
                     }
                     
                     break;
@@ -187,6 +188,8 @@ internal class Sender
 
                     if (finAck is { Syn: false, Ack: true, Push: false, Fin: false } && finAck.NumAck == _numeroSeq + 1)
                     {
+                        _numeroSeq = finAck.NumAck;
+
                         PararTemporizador();
 
                         _estadoConexao = EstadoConexaoSender.Fin2;
@@ -274,7 +277,7 @@ internal class Sender
                     {
                         SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
 
-                            Task.Run(() =>
+                        Task.Run(() =>
                         {
                             _canal.EnviarSegmento(proximoSegmentoConfiavel);
                         });
@@ -291,10 +294,8 @@ internal class Sender
 
                     break;
                 }
-                case EstadoConexaoSender.Fin1:
-                    break;
-                case EstadoConexaoSender.Fin2:
-                    break;
+                case EstadoConexaoSender.Fin1: break;
+                case EstadoConexaoSender.Fin2: break;
                 case EstadoConexaoSender.Fechada: break;
                 default: throw new ArgumentOutOfRangeException();
             }
