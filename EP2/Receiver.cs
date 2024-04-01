@@ -17,6 +17,8 @@ public enum EstadoConexaoReceiver
 internal class Receiver
 {
     private static Threads _threads;
+    private static ElapsedEventHandler _evento = new ElapsedEventHandler(TemporizadorEncerrado);
+
     private static bool _conexaoAtiva;
 
     private static EstadoConexaoReceiver _estadoConexao = EstadoConexaoReceiver.Fechada;
@@ -24,12 +26,12 @@ internal class Receiver
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
 
-    private static int _timeoutMilissegundos = 15000;
-    private static Timer _temporizadorRecebimento;
-
     private static CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
 
     private static object _trava = new object();
+
+    private const int _numeroTentaivasFin = 3;
+    private static int _contadorAckFinalNaoRecebido = 0;
 
     private static void Main()
     {
@@ -42,6 +44,8 @@ internal class Receiver
             IPEndPoint pontoConexao = new IPEndPoint(IPAddress.Any, porta);
 
             _threads = new Threads(pontoConexaoLocal: pontoConexao);
+
+            _threads.ConfigurarTemporizador(TemporizadorEncerrado);
 
             _conexaoAtiva = true;
 
@@ -74,11 +78,6 @@ internal class Receiver
     {
         lock (_trava)
         {
-            if (segmentoConfiavel == null)
-            {
-                return;
-            }
-
             switch (_estadoConexao)
             {
                 case EstadoConexaoReceiver.Escuta:
@@ -100,7 +99,7 @@ internal class Receiver
 
                         _threads.EnviarSegmento(synAck);
 
-                        IniciarTemporizador();
+                        _threads.IniciarTemporizador();
                     }
 
                     break;
@@ -109,7 +108,7 @@ internal class Receiver
                 {
                     if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumSeq == _numeroAck && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         _estadoConexao = EstadoConexaoReceiver.Estabelecida;
 
@@ -157,7 +156,7 @@ internal class Receiver
 
                             _threads.EnviarSegmento(fin);
 
-                            IniciarTemporizador();
+                            _threads.IniciarTemporizador();
 
                             break;
                         }
@@ -169,13 +168,39 @@ internal class Receiver
                 {
                     if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumSeq == _numeroAck && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         _estadoConexao = EstadoConexaoReceiver.Fechada;
 
                         _numeroSeq = segmentoConfiavel.NumAck;
 
                         _conexaoAtiva = false;
+                    }
+                    else if (segmentoConfiavel == null)
+                    {
+                        if (_contadorAckFinalNaoRecebido < _numeroTentaivasFin)
+                        {
+                            _contadorAckFinalNaoRecebido += 1;
+
+                            SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
+                                                                          ack: false,
+                                                                          push: false,
+                                                                          fin: true,
+                                                                          numSeq: _numeroSeq,
+                                                                          numAck: _numeroAck,
+                                                                          data: Array.Empty<byte>(),
+                                                                          checkSum: Array.Empty<byte>());
+
+                            _threads.EnviarSegmento(fin);
+
+                            _threads.IniciarTemporizador();
+                        }
+                        else
+                        {
+                            _estadoConexao = EstadoConexaoReceiver.Fechada;
+
+                            _conexaoAtiva = false;
+                        }
                     }
 
                     break;
@@ -202,58 +227,33 @@ internal class Receiver
         _threads.EnviarSegmento(ack);
     }
 
-    private static void IniciarTemporizador()
-    {
-        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
-        _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
-        _temporizadorRecebimento.AutoReset = false;
-        _temporizadorRecebimento.Start();
-    }
-
-    private static void PararTemporizador()
-    {
-        _temporizadorRecebimento.Stop();
-        _temporizadorRecebimento.Dispose();
-    }
-
     private static void TemporizadorEncerrado(object? state, ElapsedEventArgs elapsedEventArgs)
     {
-        lock (_trava)
-        {
-            PararTemporizador();
+        _threads.PararTemporizador();
 
-            switch (_estadoConexao)
+        switch (_estadoConexao)
+        {
+            case EstadoConexaoReceiver.Escuta:
+                break;
+            case EstadoConexaoReceiver.SynRecebido:
             {
-                case EstadoConexaoReceiver.Escuta:
-                    break;
-                case EstadoConexaoReceiver.SynRecebido:
+                lock (_trava)
                 {
                     _estadoConexao = EstadoConexaoReceiver.Escuta;
-
-                    break;
                 }
-                case EstadoConexaoReceiver.Estabelecida:
-                    break;
-                case EstadoConexaoReceiver.Fechando:
-                {
-                    SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
-                                                                  ack: false,
-                                                                  push: false,
-                                                                  fin: true,
-                                                                  numSeq: _numeroSeq,
-                                                                  numAck: _numeroAck,
-                                                                  data: Array.Empty<byte>(),
-                                                                  checkSum: Array.Empty<byte>());
 
-                    _threads.EnviarSegmento(fin);
-
-                    IniciarTemporizador();
-
-                    break;
-                }
-                case EstadoConexaoReceiver.Fechada: break;
-                default: throw new ArgumentOutOfRangeException();
+                break;
             }
+            case EstadoConexaoReceiver.Estabelecida:
+                break;
+            case EstadoConexaoReceiver.Fechando:
+            {
+                _threads.CancelarRecebimento();
+
+                break;
+            }
+            case EstadoConexaoReceiver.Fechada: break;
+            default: throw new ArgumentOutOfRangeException();
         }
     }
 }

@@ -196,6 +196,19 @@ internal class Sender
 
                     if (_base > _totalMensagens)
                     {
+                        SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
+                                                                      ack: false,
+                                                                      push: false,
+                                                                      fin: true,
+                                                                      numSeq: _numeroSeq,
+                                                                      numAck: _numeroAck,
+                                                                      data: Array.Empty<byte>(),
+                                                                      checkSum: Array.Empty<byte>());
+
+                        _threads.EnviarSegmento(fin);
+
+                        _threads.IniciarTemporizador();
+
                         _estadoConexao = EstadoConexaoSender.Fin1;
                     }
                     
@@ -203,19 +216,6 @@ internal class Sender
                 }
                 case EstadoConexaoSender.Fin1:
                 {
-                    SegmentoConfiavel fin = new SegmentoConfiavel(syn: false,
-                                                                  ack: false,
-                                                                  push: false,
-                                                                  fin: true,
-                                                                  numSeq: _numeroSeq,
-                                                                  numAck: _numeroAck,
-                                                                  data: Array.Empty<byte>(),
-                                                                  checkSum: Array.Empty<byte>());
-
-                    _threads.EnviarSegmento(fin);
-
-                    _threads.IniciarTemporizador();
-
                     SegmentoConfiavel? finAck = _threads.ReceberSegmento();
 
                     if (finAck is { Syn: false, Ack: true, Push: false, Fin: false } && finAck.NumAck == _numeroSeq + 1)
@@ -303,7 +303,17 @@ internal class Sender
 
                 break;
             }
-            case EstadoConexaoSender.Fin1: break;
+            case EstadoConexaoSender.Fin1:
+            {
+                lock (_trava)
+                {
+                    _estadoConexao = EstadoConexaoSender.Estabelecida;
+
+                    _threads.CancelarRecebimento();
+                }
+
+                break;
+            }
             case EstadoConexaoSender.Fin2: break;
             case EstadoConexaoSender.Fechada: break;
             default: throw new ArgumentOutOfRangeException();

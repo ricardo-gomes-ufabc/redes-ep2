@@ -99,11 +99,6 @@ internal class Canal
         {
             byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
 
-            //if (!ProcessarMensagem(bytesSegmentoConfiavel))
-            //{
-            //    return;
-            //}
-
             _socket.SendAsync(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
 
             lock (_locker)
@@ -142,17 +137,19 @@ internal class Canal
         }
     }
 
-    public bool ProcessarMensagem(byte[] mensagemRecebida)
-    {
-        lock (_locker)
-        {
-            byte[] mensagemModificada = mensagemRecebida.ToArray();
+    //public bool ProcessarMensagem(SegmentoConfiavel segmento)
+    //{
 
-            bool mensagemEliminada = AplicarPropriedades(ref mensagemModificada);
 
-            return !mensagemEliminada;
-        }
-    }
+    //    lock (_locker)
+    //    {
+    //        byte[] mensagemModificada = mensagemRecebida.ToArray();
+
+    //        bool mensagemEliminada = AplicarPropriedades(ref mensagemModificada);
+
+    //        return !mensagemEliminada;
+    //    }
+    //}
 
     #endregion
 
