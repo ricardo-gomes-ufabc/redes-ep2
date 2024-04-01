@@ -64,4 +64,8 @@
     </None>
   </ItemGroup>
 
+  <PropertyGroup>
+    <NoWarn>CS8604;CS8616,CS8602,CS8618</NoWarn>
+  </PropertyGroup>
+
 </Project>

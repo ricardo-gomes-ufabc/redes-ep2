@@ -108,7 +108,7 @@ internal class Canal
                 _socket.SendAsync(bytesSegmentoConfiavel, _pontoConexaoRemoto);
             }
         }
-        catch (SocketException socketException) { }
+        catch { }
     }
 
     public SegmentoConfiavel? ReceberSegmento(CancellationToken tokenCancelamento)
