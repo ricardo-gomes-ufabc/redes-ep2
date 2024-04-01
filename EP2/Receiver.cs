@@ -24,7 +24,7 @@ internal class Receiver
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
 
-    private static int _timeoutMilissegundos = 5000;
+    private static int _timeoutMilissegundos = 15000;
     private static Timer _temporizadorRecebimento;
 
     private static CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
@@ -122,12 +122,24 @@ internal class Receiver
                 {
                     switch (segmentoConfiavel)
                     {
-                        case { Syn: false, Ack: false, Push: true, Fin: false } when segmentoConfiavel.NumSeq == _numeroAck:
+                        case { Syn: false, Ack: false, Push: true, Fin: false }:
                         {
-                            ResponderMensagem(segmentoConfiavel);
+                            if (segmentoConfiavel.NumSeq == _numeroAck)
+                            {
+                                Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} recebida na ordem, entregando para a camada de aplicação.");
+
+                                ResponderMensagem(segmentoConfiavel);
+                            }
+                            else
+                            {
+                                string identificadores = String.Join(',', Enumerable.Range((int) _numeroAck, (int) segmentoConfiavel.NumSeq - 1));
+
+                                Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} recebida fora de ordem, ainda não recebidos os identificadores {identificadores}");
+                            }
 
                             break;
                         }
+
                         case { Syn: false, Ack: false, Push: false, Fin: true } when segmentoConfiavel.NumSeq == _numeroAck:
                         {
                             _estadoConexao = EstadoConexaoReceiver.Fechando;

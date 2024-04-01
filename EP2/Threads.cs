@@ -1,12 +1,18 @@
-﻿using System.Net.Sockets;
-using System.Net;
+﻿using System.Net;
+using System.Timers;
+using Timer = System.Timers.Timer;
+
 
 namespace EP2;
 
 public class Threads
 {
     private Canal _canal;
+
     private CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
+
+    private static int _timeoutMilissegundos = 15000;
+    private static Timer _temporizadorRecebimento;
 
     public Threads(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto)
     {
@@ -45,6 +51,20 @@ public class Threads
     public void CancelarRecebimento()
     {
         _tockenCancelamentoRecebimento.Cancel();
+    }
+
+    public void IniciarTemporizador(ElapsedEventHandler evento)
+    {
+        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
+        _temporizadorRecebimento.Elapsed += evento;
+        _temporizadorRecebimento.AutoReset = false;
+        _temporizadorRecebimento.Start();
+    }
+
+    public void PararTemporizador()
+    {
+        _temporizadorRecebimento.Stop();
+        _temporizadorRecebimento.Dispose();
     }
 
     public void Fechar()

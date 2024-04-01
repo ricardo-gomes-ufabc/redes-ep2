@@ -19,15 +19,14 @@ public enum EstadoConexaoSender
 internal class Sender
 {
     private static Threads _threads;
+    private static ElapsedEventHandler _evento = new ElapsedEventHandler(TemporizadorEncerrado);
+
     private static bool _conexaoAtiva;
 
     private static EstadoConexaoSender _estadoConexao = EstadoConexaoSender.Fechada;
 
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
-
-    private static int _timeoutMilissegundos = 15000;
-    private static Timer _temporizadorRecebimento;
 
     private static Dictionary<uint, SegmentoConfiavel> _bufferMensagens = new Dictionary<uint, SegmentoConfiavel>();
 
@@ -115,7 +114,7 @@ internal class Sender
 
                     _estadoConexao = EstadoConexaoSender.SynEnviado;
 
-                    IniciarTemporizador();
+                    _threads.IniciarTemporizador(_evento);
 
                     break;
                 }
@@ -125,7 +124,7 @@ internal class Sender
 
                     if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumSeq == _numeroAck && synAck.NumAck == _numeroSeq + 1)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         _numeroSeq = synAck.NumAck;
 
@@ -163,7 +162,7 @@ internal class Sender
 
                                 if (_proximoSeqNum == _base)
                                 {
-                                    IniciarTemporizador();
+                                    _threads.IniciarTemporizador(_evento);
                                 }
                             }
 
@@ -193,13 +192,13 @@ internal class Sender
 
                     _threads.EnviarSegmento(fin);
 
-                    IniciarTemporizador();
+                    _threads.IniciarTemporizador(_evento);
 
                     SegmentoConfiavel? finAck = _threads.ReceberSegmento();
 
                     if (finAck is { Syn: false, Ack: true, Push: false, Fin: false } && finAck.NumAck == _numeroSeq + 1)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         _estadoConexao = EstadoConexaoSender.Fin2;
 
@@ -210,13 +209,13 @@ internal class Sender
                 }
                 case EstadoConexaoSender.Fin2:
                 {
-                    IniciarTemporizador();
+                    _threads.IniciarTemporizador(_evento);
 
                     SegmentoConfiavel? fin = _threads.ReceberSegmento();
 
                     if (fin is { Syn: false, Ack: false, Push: false, Fin: true } && fin.NumAck == _numeroSeq)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         ResponderMensagem(fin);
 
@@ -253,25 +252,11 @@ internal class Sender
         }
     }
 
-    private static void IniciarTemporizador()
-    {
-        _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
-        _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
-        _temporizadorRecebimento.AutoReset = false;
-        _temporizadorRecebimento.Start();
-    }
-
-    private static void PararTemporizador()
-    {
-        _temporizadorRecebimento.Stop();
-        _temporizadorRecebimento.Dispose();
-    }
-
     private static void TemporizadorEncerrado(object? state, ElapsedEventArgs elapsedEventArgs)
     {
         lock (_trava)
         {
-            PararTemporizador();
+            _threads.PararTemporizador();
 
             switch (_estadoConexao)
             {
@@ -290,6 +275,10 @@ internal class Sender
 
                     _threads.CancelarRecebimento();
 
+                    string identificadores = String.Join(',', Enumerable.Range((int) _base, (int) _proximoSeqNum));
+
+                    Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}");
+
                     for (uint i = _base; i < _proximoSeqNum; i++)
                     {
                         SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
@@ -298,7 +287,7 @@ internal class Sender
 
                         if (i == _base)
                         {
-                            IniciarTemporizador();
+                            _threads.IniciarTemporizador(_evento);
                         }
                     }
 
@@ -342,12 +331,14 @@ internal class Sender
             {
                 if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumSeq == _numeroAck && ack.NumAck == _numeroSeq + 1)
                 {
+                    Console.WriteLine($"Mensagem id {ack.NumAck} recebida na ordem, entregando para a camada de aplicação.");
+
                     _base = ack.NumAck;
                     _numeroSeq = ack.NumAck;
 
                     if (_base == _proximoSeqNum)
                     {
-                        PararTemporizador();
+                        _threads.PararTemporizador();
 
                         _recebendoAcks = false;
 
