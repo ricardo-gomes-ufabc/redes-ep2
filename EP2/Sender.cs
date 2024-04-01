@@ -145,10 +145,28 @@ internal class Sender
                 {
                     while (_reeviandoJanela)
                     {
-                        Thread.Sleep(500);
+                        string identificadores = String.Join(',', Enumerable.Range((int)_base, (int)_proximoSeqNum - 1));
+
+                        Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}");
+
+                        for (uint i = _base; i < _proximoSeqNum; i++)
+                        {
+                            SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
+
+                            _threads.EnviarSegmento(proximoSegmentoConfiavel);
+
+                            if (i == _base)
+                            {
+                                _threads.IniciarTemporizador();
+                            }
+                        }
+
+                        _recebendoAcks = true;
+
+                        ReceberRespostas();
                     }
 
-                    while (_base <= _totalMensagens)
+                    while (_base <= _totalMensagens && !_reeviandoJanela)
                     {
                         lock (_trava)
                         {
@@ -281,27 +299,7 @@ internal class Sender
                     _reeviandoJanela = true;
 
                     _threads.CancelarRecebimento();
-
-                    string identificadores = String.Join(',', Enumerable.Range((int)_base, (int)_proximoSeqNum - 1));
-
-                    Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}");
-
-                    for (uint i = _base; i < _proximoSeqNum; i++)
-                    {
-                        SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
-
-                        _threads.EnviarSegmento(proximoSegmentoConfiavel);
-
-                        if (i == _base)
-                        {
-                            _threads.IniciarTemporizador();
-                        }
-                    }
-
-                    _recebendoAcks = true;
                 }
-
-                ReceberRespostas();
 
                 break;
             }
@@ -338,7 +336,7 @@ internal class Sender
             {
                 if (ack is { Syn: false, Ack: true, Push: false, Fin: false } && ack.NumSeq == _numeroAck && ack.NumAck == _numeroSeq + 1)
                 {
-                    Console.WriteLine($"Mensagem id {ack.NumAck} recebida na ordem, entregando para a camada de aplicação.");
+                    Console.WriteLine($"Mensagem id {ack.NumAck} recebida");
 
                     _base = ack.NumAck;
                     _numeroSeq = ack.NumAck;
