@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Timers;
+using Timer = System.Timers.Timer;
 
 
 namespace EP2;
@@ -302,7 +304,85 @@ internal class Canal
     }
 
     #endregion
-
-
 }
 
+#region Classe Threads
+
+public class Threads
+{
+    private Canal _canal;
+
+    private CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
+
+    private static int _timeoutMilissegundos = 500;
+    private static Timer _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
+
+    public Threads(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto)
+    {
+        _canal = new Canal(pontoConexaoLocal, pontoConexaoRemoto);
+    }
+
+    public Threads(IPEndPoint pontoConexaoLocal)
+    {
+        _canal = new Canal(pontoConexaoLocal);
+    }
+
+    #region Envio e Recebimento
+
+    public void EnviarSegmento(SegmentoConfiavel segmento)
+    {
+        _canal.ProcessarMensagem(segmento);
+    }
+
+    public SegmentoConfiavel? ReceberSegmento()
+    {
+        SegmentoConfiavel? segmentoRecebido;
+
+        segmentoRecebido = _canal.ReceberSegmento(_tockenCancelamentoRecebimento.Token);
+
+        if (_tockenCancelamentoRecebimento.Token.IsCancellationRequested)
+        {
+            _tockenCancelamentoRecebimento = new CancellationTokenSource();
+        }
+
+        return segmentoRecebido;
+    }
+
+    public void CancelarRecebimento()
+    {
+        _tockenCancelamentoRecebimento.Cancel();
+    }
+
+    #endregion
+
+    #region Timeout
+
+    public void ConfigurarTemporizador(ElapsedEventHandler evento)
+    {
+        _temporizadorRecebimento.Elapsed += evento;
+        _temporizadorRecebimento.AutoReset = true;
+    }
+
+    public void IniciarTemporizador()
+    {
+        _temporizadorRecebimento.Enabled = true;
+    }
+
+    public void PararTemporizador()
+    {
+        _temporizadorRecebimento.Stop();
+    }
+
+    public void Fechar()
+    {
+        _tockenCancelamentoRecebimento.Dispose();
+
+        _temporizadorRecebimento.Dispose();
+
+        _canal.Fechar();
+    }
+
+    #endregion
+}
+
+#endregion
