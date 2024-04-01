@@ -1,8 +1,6 @@
 ﻿using System.Net;
 using System.Text;
-using System.Threading;
 using System.Timers;
-using Timer = System.Timers.Timer;
 
 
 namespace EP2;
@@ -147,7 +145,7 @@ internal class Sender
                     {
                         string identificadores = String.Join(',', Enumerable.Range((int)_base, Convert.ToInt32(_proximoSeqNum - _base)));
 
-                        Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}");
+                        Console.WriteLine($"Timeout, reenviando mensagens com identificadores {identificadores}.");
 
                         for (uint i = _base; i < _proximoSeqNum; i++)
                         {

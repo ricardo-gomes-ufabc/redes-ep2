@@ -3,7 +3,6 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 
 namespace EP2;
@@ -133,7 +132,7 @@ internal class Canal
 
             if (!checkSumRecebimento.SequenceEqual(segmentoConfiavelRecebido.CheckSum))
             {
-                Console.WriteLine("Mensagem corrompida recebida descartada");
+                Console.WriteLine("Mensagem corrompida recebida descartada, checksum diferente");
 
                 return null;
             }
@@ -159,13 +158,37 @@ internal class Canal
 
     public void ProcessarMensagem(SegmentoConfiavel segmentoConfiavel)
     {
+        uint id = segmentoConfiavel.Ack ? segmentoConfiavel.NumAck : segmentoConfiavel.NumSeq;
+        string tipoMensagem = "";
+
+        if (segmentoConfiavel is { Syn: true, Ack: false })
+        {
+            tipoMensagem = "SYN";
+        }
+        else if (segmentoConfiavel is { Ack: true, Syn: false })
+        {
+            tipoMensagem = "ACK";
+        }
+        else if (segmentoConfiavel.Push)
+        {
+            tipoMensagem = "PUSH";
+        }
+        else if (segmentoConfiavel.Fin)
+        {
+            tipoMensagem = "FIN";
+        }
+        else
+        {
+            tipoMensagem = "SYNACK";
+        }
+
         if (DeveriaAplicarPropriedade(_probabilidadeEliminacao))
         {
             _totalMensagensEliminadas++;
 
             EnviarSegmento(null);
 
-            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} eliminada.");
+            Console.WriteLine($"Mensagem {tipoMensagem} id {id} eliminada.");
 
             return;
         }
@@ -180,7 +203,7 @@ internal class Canal
 
             EnviarSegmento(bytesSegmentoDuplicado);
 
-            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} duplicada.");
+            Console.WriteLine($"Mensagem {tipoMensagem} id {id} duplicada.");
         }
 
 
@@ -190,21 +213,21 @@ internal class Canal
         {
             CorromperSegmento(ref bytesSegmento);
             _totalMensagensCorrompidas++;
-            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} corrompida.");
+            Console.WriteLine($"Mensagem {tipoMensagem} id {id} corrompida.");
         }
 
         if (bytesSegmento.Length > _tamanhoMaximoBytes)
         {
             CortarSegmento(ref bytesSegmento);
             _totalMensagensCortadas++;
-            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} cortada.");
+            Console.WriteLine($"Mensagem {tipoMensagem} id {id} cortada.");
         }
 
         if (_delayMilissegundos != 0)
         {
             Thread.Sleep(_delayMilissegundos);
             _totalMensagensAtrasadas++;
-            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} atrasada.");
+            Console.WriteLine($"Mensagem {tipoMensagem} id {id} atrasada.");
         }
 
         EnviarSegmento(bytesSegmento);

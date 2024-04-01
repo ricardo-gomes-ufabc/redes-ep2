@@ -11,7 +11,7 @@ public class Threads
 
     private CancellationTokenSource _tockenCancelamentoRecebimento = new CancellationTokenSource();
 
-    private static int _timeoutMilissegundos = 15000;
+    private static int _timeoutMilissegundos = 500;
     private static Timer _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
 
     public Threads(IPEndPoint pontoConexaoLocal, IPEndPoint pontoConexaoRemoto)

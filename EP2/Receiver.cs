@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Timers;
-using Timer = System.Timers.Timer;
 
 
 namespace EP2;
@@ -129,11 +128,17 @@ internal class Receiver
 
                                 ResponderMensagem(segmentoConfiavel);
                             }
+                            else if (segmentoConfiavel.NumSeq < _numeroAck)
+                            {
+                                Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} já recebida anteriormente.");
+
+                                ResponderMensagemRecebidaAnteriormente(segmentoConfiavel);
+                            }
                             else
                             {
-                                string identificadores = String.Join(',', Enumerable.Range((int) _numeroAck, (int) segmentoConfiavel.NumSeq - 1));
+                                string identificadores = String.Join(',', Enumerable.Range((int) _numeroAck, Convert.ToInt32(segmentoConfiavel.NumSeq - _numeroAck)));
 
-                                Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} recebida fora de ordem, ainda não recebidos os identificadores {identificadores}");
+                                Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} recebida fora de ordem, ainda não recebidos os identificadores {identificadores}.");
                             }
 
                             break;
@@ -210,7 +215,7 @@ internal class Receiver
             }
         }
     }
-
+    
     private static void ResponderMensagem(SegmentoConfiavel segmentoConfiavel)
     {
         _numeroAck = segmentoConfiavel.NumSeq + 1;
@@ -221,6 +226,20 @@ internal class Receiver
                                                       fin: false,
                                                       numSeq: _numeroSeq,
                                                       numAck: _numeroAck,
+                                                      data: Array.Empty<byte>(),
+                                                      checkSum: Array.Empty<byte>());
+
+        _threads.EnviarSegmento(ack);
+    }
+
+    private static void ResponderMensagemRecebidaAnteriormente(SegmentoConfiavel segmentoConfiavel)
+    {
+        SegmentoConfiavel ack = new SegmentoConfiavel(syn: false,
+                                                      ack: true,
+                                                      push: false,
+                                                      fin: false,
+                                                      numSeq: _numeroSeq,
+                                                      numAck: segmentoConfiavel.NumSeq + 1,
                                                       data: Array.Empty<byte>(),
                                                       checkSum: Array.Empty<byte>());
 
