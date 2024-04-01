@@ -18,7 +18,7 @@ public enum EstadoConexaoSender
 
 internal class Sender
 {
-    private static Canal _canal;
+    private static Threads _threads;
     private static bool _conexaoAtiva;
 
     private static EstadoConexaoSender _estadoConexao = EstadoConexaoSender.Fechada;
@@ -26,7 +26,7 @@ internal class Sender
     private static uint _numeroSeq = 0;
     private static uint _numeroAck = 0;
 
-    private static int _timeoutMilissegundos = 60000;
+    private static int _timeoutMilissegundos = 15000;
     private static Timer _temporizadorRecebimento;
 
     private static Dictionary<uint, SegmentoConfiavel> _bufferMensagens = new Dictionary<uint, SegmentoConfiavel>();
@@ -37,8 +37,10 @@ internal class Sender
     private static uint _proximoSeqNum = 1;
 
     private static bool _recebendoAcks = false;
+    private static bool _reeviandoJanela = false;
 
     private static object _trava = new object();
+    
 
     private static void Main()
     {
@@ -64,8 +66,8 @@ internal class Sender
                                  new IPEndPoint(IPAddress.Loopback, portaServidor) :
                                  new IPEndPoint(IPAddress.Parse(ipServidor), portaServidor);
 
-            _canal = new Canal(pontoConexaoRemoto: pontoConexaoRemoto,
-                               pontoConexaoLocal: pontoConexaoLocal);
+            _threads = new Threads(pontoConexaoRemoto: pontoConexaoRemoto,
+                                   pontoConexaoLocal: pontoConexaoLocal);
 
             Console.Write("Digite a mensagem a ser enviada: ");
 
@@ -81,7 +83,7 @@ internal class Sender
 
             Console.WriteLine("Sender encerrado.");
 
-            _canal.Fechar();
+            _threads.Fechar();
         }
         catch (Exception e)
         {
@@ -109,7 +111,7 @@ internal class Sender
                                                                   data: Array.Empty<byte>(),
                                                                   checkSum: Array.Empty<byte>());
 
-                    _canal.EnviarSegmento(syn);
+                    _threads.EnviarSegmento(syn);
 
                     _estadoConexao = EstadoConexaoSender.SynEnviado;
 
@@ -119,17 +121,21 @@ internal class Sender
                 }
                 case EstadoConexaoSender.SynEnviado:
                 {
-                    SegmentoConfiavel? synAck = _canal.ReceberSegmento();
+                    SegmentoConfiavel? synAck = _threads.ReceberSegmento();
 
                     if (synAck is { Syn: true, Ack: true, Push: false, Fin: false } && synAck.NumSeq == _numeroAck && synAck.NumAck == _numeroSeq + 1)
                     {
-                        _numeroSeq = synAck.NumAck;
-
                         PararTemporizador();
+
+                        _numeroSeq = synAck.NumAck;
 
                         ResponderMensagem(synAck);
 
                         _estadoConexao = EstadoConexaoSender.Estabelecida;
+                    }
+                    else
+                    {
+                        Thread.Sleep(5000);
                     }
 
                     break;
@@ -138,7 +144,12 @@ internal class Sender
                 {
                     lock (_trava)
                     {
-                        while (_base < _totalMensagens)
+                        while (_reeviandoJanela)
+                        {
+                            Thread.Sleep(500);
+                        }
+
+                        while (_base <= _totalMensagens)
                         {
                             if (_proximoSeqNum >= _base + _tamanhoJanela) continue;
 
@@ -148,10 +159,7 @@ internal class Sender
 
                                 proximoSegmentoConfiavel.SetNumAck(_numeroAck);
 
-                                Task.Run(() =>
-                                {
-                                    _canal.EnviarSegmento(proximoSegmentoConfiavel);
-                                });
+                                _threads.EnviarSegmento(proximoSegmentoConfiavel);
 
                                 if (_proximoSeqNum == _base)
                                 {
@@ -164,7 +172,10 @@ internal class Sender
                             ReceberRespostas();
                         }
 
-                        _estadoConexao = EstadoConexaoSender.Fin1;
+                        if (_base > _totalMensagens)
+                        {
+                            _estadoConexao = EstadoConexaoSender.Fin1;
+                        }
                     }
                     
                     break;
@@ -180,19 +191,19 @@ internal class Sender
                                                                   data: Array.Empty<byte>(),
                                                                   checkSum: Array.Empty<byte>());
 
-                    _canal.EnviarSegmento(fin);
+                    _threads.EnviarSegmento(fin);
 
                     IniciarTemporizador();
 
-                    SegmentoConfiavel? finAck = _canal.ReceberSegmento();
+                    SegmentoConfiavel? finAck = _threads.ReceberSegmento();
 
                     if (finAck is { Syn: false, Ack: true, Push: false, Fin: false } && finAck.NumAck == _numeroSeq + 1)
                     {
-                        _numeroSeq = finAck.NumAck;
-
                         PararTemporizador();
 
                         _estadoConexao = EstadoConexaoSender.Fin2;
+
+                        _numeroSeq = finAck.NumAck;
                     }
 
                     break;
@@ -201,9 +212,9 @@ internal class Sender
                 {
                     IniciarTemporizador();
 
-                    SegmentoConfiavel? fin = _canal.ReceberSegmento();
+                    SegmentoConfiavel? fin = _threads.ReceberSegmento();
 
-                    if (fin is { Syn: false, Ack: false, Push: false, Fin: true } && fin.NumAck == _numeroSeq + 1)
+                    if (fin is { Syn: false, Ack: false, Push: false, Fin: true } && fin.NumAck == _numeroSeq)
                     {
                         PararTemporizador();
 
@@ -247,6 +258,7 @@ internal class Sender
         _temporizadorRecebimento = new Timer(_timeoutMilissegundos);
         _temporizadorRecebimento.Elapsed += TemporizadorEncerrado;
         _temporizadorRecebimento.AutoReset = false;
+        _temporizadorRecebimento.Start();
     }
 
     private static void PararTemporizador()
@@ -267,20 +279,22 @@ internal class Sender
                 {
                     _estadoConexao = EstadoConexaoSender.Fechada;
 
+                    _threads.CancelarRecebimento();
+
                     break;
                 }
                 case EstadoConexaoSender.Estabelecida:
                 {
                     _recebendoAcks = false;
+                    _reeviandoJanela = true;
+
+                    _threads.CancelarRecebimento();
 
                     for (uint i = _base; i < _proximoSeqNum; i++)
                     {
                         SegmentoConfiavel proximoSegmentoConfiavel = _bufferMensagens[i];
 
-                        Task.Run(() =>
-                        {
-                            _canal.EnviarSegmento(proximoSegmentoConfiavel);
-                        });
+                        _threads.EnviarSegmento(proximoSegmentoConfiavel);
 
                         if (i == _base)
                         {
@@ -315,14 +329,14 @@ internal class Sender
                                                       data: Array.Empty<byte>(),
                                                       checkSum: Array.Empty<byte>());
 
-        _canal.EnviarSegmento(ack);
+        _threads.EnviarSegmento(ack);
     }
 
     private static void ReceberRespostas()
     {
         while (_recebendoAcks)
         {
-            SegmentoConfiavel? ack = _canal.ReceberSegmento();
+            SegmentoConfiavel? ack = _threads.ReceberSegmento();
 
             lock (_trava)
             {
@@ -336,6 +350,11 @@ internal class Sender
                         PararTemporizador();
 
                         _recebendoAcks = false;
+
+                        if (_reeviandoJanela)
+                        {
+                            _reeviandoJanela = false;
+                        }
                     }
                 }
             }

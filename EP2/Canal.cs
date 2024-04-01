@@ -95,26 +95,34 @@ internal class Canal
 
     public void EnviarSegmento(SegmentoConfiavel segmentoConfiavel)
     {
-        byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
-
-        //if (!ProcessarMensagem(bytesSegmentoConfiavel))
-        //{
-        //    return;
-        //}
-
-        _socket.Send(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
-
-        lock (_locker)
+        try
         {
-            _totalMensagensEnviadas++;
+            byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
+
+            //if (!ProcessarMensagem(bytesSegmentoConfiavel))
+            //{
+            //    return;
+            //}
+
+            _socket.SendAsync(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
+
+            lock (_locker)
+            {
+                _totalMensagensEnviadas++;
+            }
         }
+        catch (SocketException socketException) { }
     }
 
-    public SegmentoConfiavel? ReceberSegmento()
+    public SegmentoConfiavel? ReceberSegmento(CancellationToken tokenCancelamento)
     {
         try
         {
-            byte[] segmentoRecebido = _socket.Receive(ref _pontoConexaoRemoto);
+            ValueTask<UdpReceiveResult> taskRecebimento = _socket.ReceiveAsync(tokenCancelamento);
+
+            byte[] segmentoRecebido = taskRecebimento.Result.Buffer;
+
+            _pontoConexaoRemoto ??= taskRecebimento.Result.RemoteEndPoint;
 
             SegmentoConfiavel? segmentoConfiavelRecebido = ByteArrayParaSegmentoConfiavel(segmentoRecebido);
 
