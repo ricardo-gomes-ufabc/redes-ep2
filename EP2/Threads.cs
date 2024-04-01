@@ -26,9 +26,7 @@ public class Threads
 
     public void EnviarSegmento(SegmentoConfiavel segmento)
     {
-        //_canal.ProcessarMensagem(segmento);
-
-        _canal.EnviarSegmento(segmento);
+        _canal.ProcessarMensagem(segmento);
     }
 
     public SegmentoConfiavel? ReceberSegmento()

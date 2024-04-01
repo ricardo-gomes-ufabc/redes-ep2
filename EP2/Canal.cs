@@ -1,7 +1,9 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 
 namespace EP2;
@@ -9,7 +11,7 @@ namespace EP2;
 internal class Canal
 {
     private readonly Random _aleatorio = new Random();
-    private readonly object _locker = new object();
+    private readonly object _trava = new object();
 
     #region Socket
 
@@ -93,17 +95,18 @@ internal class Canal
         return JsonSerializer.Deserialize<SegmentoConfiavel>(Encoding.UTF8.GetString(byteArray));
     }
 
-    public void EnviarSegmento(SegmentoConfiavel segmentoConfiavel)
+    public void EnviarSegmento(byte[]? bytesSegmentoConfiavel)
     {
         try
         {
-            byte[] bytesSegmentoConfiavel = SegmentoConfiavelParaByteArray(segmentoConfiavel);
-
-            _socket.SendAsync(SegmentoConfiavelParaByteArray(segmentoConfiavel), _pontoConexaoRemoto);
-
-            lock (_locker)
+            lock (_trava)
             {
                 _totalMensagensEnviadas++;
+            }
+
+            if (bytesSegmentoConfiavel != null)
+            {
+                _socket.SendAsync(bytesSegmentoConfiavel, _pontoConexaoRemoto);
             }
         }
         catch (SocketException socketException) { }
@@ -117,19 +120,32 @@ internal class Canal
 
             byte[] segmentoRecebido = taskRecebimento.Result.Buffer;
 
+            lock (_trava)
+            {
+                _totalMensagensRecebidas++;
+            }
+
             _pontoConexaoRemoto ??= taskRecebimento.Result.RemoteEndPoint;
 
             SegmentoConfiavel? segmentoConfiavelRecebido = ByteArrayParaSegmentoConfiavel(segmentoRecebido);
 
-            lock (_locker)
+            byte[]? checkSumRecebimento = GerarCheckSum(segmentoConfiavelRecebido);
+
+            if (!checkSumRecebimento.SequenceEqual(segmentoConfiavelRecebido.CheckSum))
             {
-                if (segmentoConfiavelRecebido != null)
-                {
-                    _totalMensagensRecebidas++;
-                }
+                Console.WriteLine("Mensagem corrompida recebida descartada");
+
+                return null;
             }
 
             return segmentoConfiavelRecebido;
+
+        }
+        catch (JsonException)
+        {
+            Console.WriteLine("Mensagem corrompida recebida descartada");
+
+            return null;
         }
         catch
         {
@@ -137,57 +153,87 @@ internal class Canal
         }
     }
 
-    //public bool ProcessarMensagem(SegmentoConfiavel segmento)
-    //{
-
-
-    //    lock (_locker)
-    //    {
-    //        byte[] mensagemModificada = mensagemRecebida.ToArray();
-
-    //        bool mensagemEliminada = AplicarPropriedades(ref mensagemModificada);
-
-    //        return !mensagemEliminada;
-    //    }
-    //}
-
     #endregion
 
     #region Aplicação de Propiedades
 
-    private bool AplicarPropriedades(ref byte[] mensagem)
+    public void ProcessarMensagem(SegmentoConfiavel segmentoConfiavel)
     {
         if (DeveriaAplicarPropriedade(_probabilidadeEliminacao))
         {
             _totalMensagensEliminadas++;
-            _totalMensagensRecebidas--;
-            Console.WriteLine("Mensagem eliminada.");
-            return true;
+
+            EnviarSegmento(null);
+
+            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} eliminada.");
+
+            return;
+        }
+
+        segmentoConfiavel.SetCheckSum(GerarCheckSum(segmentoConfiavel));
+
+        if (DeveriaAplicarPropriedade(_probabilidadeDuplicacao))
+        {
+            _totalMensagensDuplicadas++;
+
+            byte[] bytesSegmentoDuplicado = SegmentoConfiavelParaByteArray(segmentoConfiavel);
+
+            EnviarSegmento(bytesSegmentoDuplicado);
+
+            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} duplicada.");
+        }
+
+
+        byte[] bytesSegmento = SegmentoConfiavelParaByteArray(segmentoConfiavel);
+
+        if (DeveriaAplicarPropriedade(_probabilidadeCorrupcao))
+        {
+            CorromperSegmento(ref bytesSegmento);
+            _totalMensagensCorrompidas++;
+            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} corrompida.");
+        }
+
+        if (bytesSegmento.Length > _tamanhoMaximoBytes)
+        {
+            CortarSegmento(ref bytesSegmento);
+            _totalMensagensCortadas++;
+            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} cortada.");
         }
 
         if (_delayMilissegundos != 0)
         {
             Thread.Sleep(_delayMilissegundos);
             _totalMensagensAtrasadas++;
-            Console.WriteLine("Mensagem atrasada.");
+            Console.WriteLine($"Mensagem id {segmentoConfiavel.NumSeq} atrasada.");
         }
 
-        if (DeveriaAplicarPropriedade(_probabilidadeDuplicacao))
+        EnviarSegmento(bytesSegmento);
+    }
+
+    private byte[] GerarCheckSum(SegmentoConfiavel segmentoConfiavel)
+    {
+        var conteudoSegmento = new
         {
-            _totalMensagensDuplicadas++;
-            _totalMensagensRecebidas++;
-            Console.WriteLine("Mensagem duplicada.");
-        }
+            Syn = segmentoConfiavel.Syn,
+            Ack = segmentoConfiavel.Ack,
+            Push = segmentoConfiavel.Push,
+            Fin = segmentoConfiavel.Fin,
+            NumSeq = segmentoConfiavel.NumSeq,
+            NumAck = segmentoConfiavel.NumAck,
+            Data = segmentoConfiavel.Data,
+        };
 
-        if (DeveriaAplicarPropriedade(_probabilidadeCorrupcao))
+        string jsonConteudo = JsonSerializer.Serialize(conteudoSegmento);
+
+        return GetHash(jsonConteudo);
+    }
+
+    public static byte[] GetHash(string inputString)
+    {
+        using (HashAlgorithm algorithm = SHA256.Create())
         {
-            CorromperSegmento(ref mensagem);
-            Console.WriteLine("Mensagem corrompida.");
+            return algorithm.ComputeHash(Encoding.UTF8.GetBytes(inputString));
         }
-
-        CortarSegmento(ref mensagem);
-
-        return false;
     }
 
     private bool DeveriaAplicarPropriedade(int probabilidade)
@@ -204,11 +250,7 @@ internal class Canal
 
     private void CortarSegmento(ref byte[] segmento)
     {
-        if (segmento.Length > _tamanhoMaximoBytes)
-        {
-            Array.Resize(ref segmento, _tamanhoMaximoBytes);
-            Console.WriteLine("Mensagem cortada.");
-        }
+        Array.Resize(ref segmento, _tamanhoMaximoBytes);
     }
 
     #endregion

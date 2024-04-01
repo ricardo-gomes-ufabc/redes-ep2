@@ -84,6 +84,8 @@ internal class Receiver
                 {
                     if (segmentoConfiavel is { Syn: true, Ack: false, Push: false, Fin: false })
                     {
+                        Console.WriteLine($"Mensagem SYN {segmentoConfiavel.NumSeq} recebida"); //Remover
+
                         _estadoConexao = EstadoConexaoReceiver.SynRecebido;
 
                         _numeroAck = segmentoConfiavel.NumSeq + 1;
@@ -99,6 +101,8 @@ internal class Receiver
 
                         _threads.EnviarSegmento(synAck);
 
+                        Console.WriteLine($"Mensagem ACK id {segmentoConfiavel.NumAck} enviada"); //Remover
+
                         _threads.IniciarTemporizador();
                     }
 
@@ -109,6 +113,8 @@ internal class Receiver
                     if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumSeq == _numeroAck && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
                         _threads.PararTemporizador();
+
+                        Console.WriteLine($"Mensagem ACK id {segmentoConfiavel.NumAck} recebida"); //Remover
 
                         _estadoConexao = EstadoConexaoReceiver.Estabelecida;
 
@@ -141,6 +147,8 @@ internal class Receiver
 
                         case { Syn: false, Ack: false, Push: false, Fin: true } when segmentoConfiavel.NumSeq == _numeroAck:
                         {
+                            Console.WriteLine(value: $"Mensagem FIN id {segmentoConfiavel.NumSeq} recebida"); //Remover
+
                             _estadoConexao = EstadoConexaoReceiver.Fechando;
 
                             ResponderMensagem(segmentoConfiavel);
@@ -156,6 +164,8 @@ internal class Receiver
 
                             _threads.EnviarSegmento(fin);
 
+                            Console.WriteLine($"Mensagem ACK id {segmentoConfiavel.NumAck} enviada"); //Remover
+
                             _threads.IniciarTemporizador();
 
                             break;
@@ -169,6 +179,8 @@ internal class Receiver
                     if (segmentoConfiavel is { Syn: false, Ack: true, Push: false, Fin: false } && segmentoConfiavel.NumSeq == _numeroAck && segmentoConfiavel.NumAck == _numeroSeq + 1)
                     {
                         _threads.PararTemporizador();
+
+                        Console.WriteLine($"Mensagem ACK id {segmentoConfiavel.NumAck} recebida"); //Remover
 
                         _estadoConexao = EstadoConexaoReceiver.Fechada;
 
@@ -192,6 +204,8 @@ internal class Receiver
                                                                           checkSum: Array.Empty<byte>());
 
                             _threads.EnviarSegmento(fin);
+
+                            Console.WriteLine($"Mensagem FIN id {segmentoConfiavel.NumSeq} enviada"); //Remover
 
                             _threads.IniciarTemporizador();
                         }
