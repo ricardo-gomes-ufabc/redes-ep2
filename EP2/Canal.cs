@@ -238,7 +238,7 @@ internal class Canal
 
     private bool DeveriaAplicarPropriedade(int probabilidade)
     {
-        return _aleatorio.Next(minValue: 0, maxValue: 101) <= probabilidade;
+        return _aleatorio.Next(minValue: 1, maxValue: 101) <= probabilidade;
     }
 
     private void CorromperSegmento(ref byte[] segmento)
